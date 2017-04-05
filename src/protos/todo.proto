@@ -1,0 +1,10 @@
+syntax = 'proto3';
+
+message TodoItem {
+  string msg = 1;
+  bool done = 2;
+}
+
+service Database {
+  rpc CreateTodoItem(TodoItem) returns (TodoItem) {}
+}

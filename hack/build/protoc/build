@@ -1,0 +1,71 @@
+#!/bin/bash
+# vim: ft=sh
+set -e
+
+PROTOC_ZIP_URL="https://github.com/google/protobuf/releases/download/v3.2.0/protoc-3.2.0-linux-x86_64.zip"
+BUILD_DIR=$(cd $(dirname $BASH_SOURCE); pwd)
+
+build_build_image() {
+  cp $BUILD_DIR/{Dockerfile.build,build} $context_dir
+  pushd $context_dir
+    docker build -t protoc_build_image -f Dockerfile.build .
+  popd
+  rm $context_dir/{Dockerfile.build,build}
+}
+
+build_in_container() {
+  docker rm -f protoc-build 2> /dev/null || true
+  docker run --name protoc-build -c 4000 -it \
+    -w /opt/grpc \
+    protoc_build_image \
+    /opt/build plugins
+  docker cp protoc-build:/opt/grpc/bins/opt/grpc_php_plugin $context_dir
+  docker cp protoc-build:/opt/go/bin/protoc-gen-go $context_dir
+  docker rm protoc-build
+}
+
+build_php_plugin() {
+  git clone https://github.com/grpc/grpc /opt/grpc
+  pushd /opt/grpc
+    git submodule update --init
+    make -j4 grpc_php_plugin
+  popd
+}
+
+build_go_plugin() {
+  go get github.com/golang/protobuf/{proto,protoc-gen-go}
+}
+
+get_protoc() {
+  curl -s -L -o $context_dir/protoc.zip $PROTOC_ZIP_URL
+  mkdir -p $context_dir/protoc-dir
+  unzip $context_dir/protoc.zip -d $context_dir/protoc-dir > /dev/null
+  cp $context_dir/protoc-dir/bin/protoc $context_dir
+  chmod +x $context_dir/protoc
+  rm -Rf $context_dir/protoc.zip $context_dir/protoc-dir
+}
+
+build_image() {
+  cp $BUILD_DIR/Dockerfile $context_dir
+  pushd $context_dir
+    docker build -t protoc_image -f Dockerfile .
+  popd
+}
+
+main() {
+  if [ "$1" == "plugins" ]; then
+    build_php_plugin
+    build_go_plugin
+  else
+    context_dir=$(mktemp -d)
+
+    build_build_image
+    build_in_container
+    get_protoc
+    build_image
+
+    rm -Rf $context_dir
+  fi
+}
+
+main $@

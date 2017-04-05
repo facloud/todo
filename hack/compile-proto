@@ -1,0 +1,73 @@
+#!/bin/bash
+# vim: ft=sh
+set -e
+
+ROOT_DIR=$(cd $(dirname $BASH_SOURCE)/..; pwd)
+
+check_image() {
+  if ! docker images | grep protoc_image > /dev/null; then
+    $ROOT_DIR/hack/build/protoc/build
+  else
+    echo '[DEBUG] `protoc_image` Docker image was found.'
+  fi
+}
+
+get_rand() {
+  cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 4 | head -n 1
+}
+
+compile_go() {
+  rand=$(get_rand)
+  name="protoc-run-$rand"
+
+  docker run -it \
+    --name $name \
+    -v $ROOT_DIR/src/protos:/opt/todo/in \
+    protoc_image \
+    protoc \
+      --proto_path=/opt/todo/in \
+      --go_out=plugins=grpc:/opt/todo/out \
+      /opt/todo/in/todo.proto
+
+  temp_dir=$(mktemp -d)
+  docker cp $name:/opt/todo/out $temp_dir
+  docker rm $name > /dev/null
+
+  cp -rf $temp_dir/out/* $ROOT_DIR/src/database
+  rm -Rf $temp_dir
+
+  echo '[INFO] Go files were compiled!'
+}
+
+compile_php() {
+  rand=$(get_rand)
+  name="protoc-run-$rand"
+
+  docker run -it \
+    --name $name \
+    -v $ROOT_DIR/src/protos:/opt/todo/in \
+    protoc_image \
+    protoc \
+      --proto_path=/opt/todo/in \
+      --grpc_out=/opt/todo/out \
+      --php_out=/opt/todo/out \
+      --plugin=protoc-gen-grpc=/usr/local/bin/grpc_php_plugin \
+      /opt/todo/in/todo.proto
+
+  temp_dir=$(mktemp -d)
+  docker cp $name:/opt/todo/out $temp_dir
+  docker rm $name > /dev/null
+
+  cp -rf $temp_dir/out/* $ROOT_DIR/src/web
+  rm -Rf $temp_dir
+
+  echo '[INFO] PHP files were compiled!'
+}
+
+main() {
+  check_image
+  compile_go
+  compile_php
+}
+
+main

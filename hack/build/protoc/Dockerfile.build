@@ -1,0 +1,21 @@
+# vim: ft=dockerfile
+FROM ubuntu:16.04
+
+# install tools
+RUN apt-get update; \
+  apt-get install --yes git make autoconf libtool g++
+
+# install Go
+RUN apt-get install --yes curl; \
+  mkdir -p /usr/local; \
+  curl -sL https://storage.googleapis.com/golang/go1.8.linux-amd64.tar.gz | tar -zx -C /usr/local; \
+  mkdir -p /opt/go
+
+# add script
+RUN mkdir -p /opt
+ADD build /opt/build
+
+# set Go environment variables
+ENV GOROOT=/usr/local/go \
+  GOPATH=/opt/go \
+  PATH=$PATH:/usr/local/go/bin:/opt/go/bin
